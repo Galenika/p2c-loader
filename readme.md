@@ -30,5 +30,5 @@ This was created as a fun project when I was bored over christmas, some code may
 - https://github.com/weidai11/cryptopp for encryption
 
 ### updates
-01/01/2021 added hwid resetting, fixed usage of client's IP, fixed bulk license creation
-01/01/2021 initial commit
+- 01/01/2021 added hwid resetting, fixed usage of client's IP, fixed bulk license creation
+- 01/01/2021 initial commit
