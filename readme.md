@@ -15,9 +15,6 @@ C++ base for p2c loaders. As of now, only includes user authentication and few f
 - more license management features
 - add option to add time to all licenses at once
 - better server UI
-- reset hwid
-- fix usage of client's IP
-- fix bulk license creation
 
 ### setup
 1. extract shared.rar
@@ -31,3 +28,7 @@ This was created as a fun project when I was bored over christmas, some code may
 ### credits
 - https://github.com/Joona70 for hwid grabbing method
 - https://github.com/weidai11/cryptopp for encryption
+
+### updates
+01/01/2021 added hwid resetting, fixed usage of client's IP, fixed bulk license creation
+01/01/2021 initial commit

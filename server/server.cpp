@@ -12,11 +12,15 @@
 //crypto
 #include "../shared/crypto/crypto.h"
 
+//time
+#include <chrono>
+
 //extra
 #pragma comment(lib,"WS2_32")
 
 //namespaces
 //std already in server.h
+using namespace chrono;
 
 
 //main values
@@ -32,14 +36,25 @@ int port = 1337; // port
 
 int connections = 0;
 
-string gen_random(const int len, int pid)
+string gen_random(int len, int pid)
 {
-	string temp;
-	static const char chars[] = "0123456789" "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-	srand((unsigned)time(NULL) * alfaKey - betaKey + pid * 2);
-	for (int i = 0; i < len; ++i)
-		temp += chars[rand() % (sizeof(chars) - 1)];
-	return temp;
+    string temp;
+    static const char chars[] = "0123456789" "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    srand((unsigned)time(NULL) * alfaKey - betaKey + pid * 2);
+    for (int i = 0; i < len; ++i)
+        temp += chars[rand() % (sizeof(chars) - 1)];
+    return temp;
+}
+
+string gen_random_ms(int len, int change)
+{
+    string temp;
+    unsigned __int64 ms = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    static const char chars[] = "0123456789" "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    srand((unsigned)ms - change);
+    for (int i = 0; i < len; ++i)
+        temp += chars[rand() % (sizeof(chars) - 1)];
+    return temp;
 }
 
 ofstream file; //used on many places
@@ -103,7 +118,8 @@ void commands()
             for (int i = 0; i < count; i++)
             {
                 //gen license
-                license = gen_random(4, 1) + "-" + gen_random(4, 1) + "-" + gen_random(4, 1) + "-" + gen_random(4, 1);
+                //dont set second value in gen_random_ms() higher than 1000000000000
+                license = gen_random_ms(4, 983642) + "-" + gen_random_ms(4, 1024) + "-" + gen_random_ms(4, 7890) + "-" + gen_random_ms(4, 234768596);
 
                 //check if license already exists
             trygain:
@@ -111,12 +127,43 @@ void commands()
                 string expire;
                 if (l)
                 {
-                    license = gen_random(4, 1) + "-" + gen_random(4, 3) + "-" + gen_random(4, 4) + "-" + gen_random(4, 9);
+                    license = gen_random_ms(4, 92) + "-" + gen_random_ms(4, 14) + "-" + gen_random_ms(4, 92) + "-" + gen_random_ms(4, 348);
                     goto trygain; //need to set new value to the ifstream varialbe
                 }
                 file.open(license, ios_base::app);
-                file << "notused\n" << length << endl;
+                file << "notused " << length << endl;
                 file.close();
+            }
+
+            printf("successfully generated %i licenses\n", count);
+        }
+        else if (cmd == "reset")
+        {
+            string license;
+            printf("enter license which you want to reset hwid at: ");
+            cin >> license;
+
+            ifstream l(license.c_str());
+            if (l)
+            {
+                string oldhwid, secondData;
+                l >> oldhwid;
+                if (oldhwid == "notused")
+                    printf("the license has no hwid bound\n");
+                else
+                {
+                    l >> secondData; //would be needed to add another read/change whole method if there were more than 2 data stored in license files
+
+                    file.open(license);
+                    file << "hwidreset " << secondData << endl;
+                    file.close();
+
+                    printf("successfully resetted hwid for %s\n", license.c_str());
+                }
+            }
+            else
+            {
+                printf("license not found\n");
             }
         }
         else
@@ -125,6 +172,11 @@ void commands()
         }
     }
 }
+
+struct ARGS {
+    SOCKET* soc;
+    string* str;
+};
 
 int main()
 {
@@ -155,8 +207,12 @@ int main()
         SOCKET client;
         if ((client = accept(server, reinterpret_cast<SOCKADDR*>(&client_addr), &client_addr_size)) != INVALID_SOCKET)
         {
-            //string clientAddr = inet_ntoa(client_addr.sin_addr); //client's IP
-            CreateThread(NULL, NULL, (LPTHREAD_START_ROUTINE)on_client_connect, (LPVOID)client, NULL, NULL);
+            //using structure to pass multiple data via CreateThread()
+            SOCKET soc = client;
+            string str = inet_ntoa(client_addr.sin_addr); //client's IP
+            ARGS args = { &soc, &str };
+
+            CreateThread(NULL, NULL, (LPTHREAD_START_ROUTINE)on_client_connect, &args, NULL, NULL);
         }
 
         const auto last_error = WSAGetLastError();
@@ -188,12 +244,17 @@ string recvDec(SOCKET s, string akey, string aiv) //receive and decrypt data
     return decrypted;
 }
 
-void on_client_connect(SOCKET client)
+void on_client_connect(LPVOID Ar)
 {
+    //getting data from the structure
+    ARGS* Args = (ARGS*)Ar;
+    SOCKET client = *Args->soc;
+    string clientAddr = *Args->str;
+
     connections++; //just to know how many people are conencted at once
     printf("currently connected users: %i\n", connections);
 
-    string clientAddr = to_string(connections); //had issues when using client's IP, will fix soon, as of now using connection ID instead
+    //string clientAddr = to_string(connections); //had issues when using client's IP, will fix soon, as of now using connection ID instead
     //printf("client connected from %s\n", clientAddr.c_str());
 
     char buffer[2048]; //main receiving buffer
@@ -300,15 +361,26 @@ void on_client_connect(SOCKET client)
         }
         else
         {
+            int expire;
+            l >> expire;
             if (usedornot == hwid)
             {
-                int expire;
-                l >> expire;
                 if (expire > time(NULL))
                     sendEnc(client, "good", akey, aiv);
                 else
                     sendEnc(client, "expired", akey, aiv);
 
+            }
+            else if (usedornot == "hwidreset")
+            {
+                file.open(license);
+                file << hwid << " " << expire << endl;
+                file.close();
+
+                if (expire > time(NULL))
+                    sendEnc(client, "good", akey, aiv);
+                else
+                    sendEnc(client, "expired", akey, aiv);
             }
             else
                 sendEnc(client, "badhwid", akey, aiv);
